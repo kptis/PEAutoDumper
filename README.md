@@ -43,7 +43,7 @@ This is really meant to be used as a library but there is a small cli example in
 
 *Dump PE from process, fix header, and rebuild IAT.*
  
-`python pyiatrebuild.py rebuild dump --pid 3368 --oep 598738 out.exe`
+`python pyiatrebuild.py dump --pid 3368 --oep 598738 out.exe`
 
 ### ProTip
 If you don't need to rebuild a full PE and just want to resolve some pointers to import into IDA you can pass a list of pointers and the PID to pyiatrebuild.reslove_iat_pointers and it will return a dictionary with the module and function names resolved for the pointers you provided. 
