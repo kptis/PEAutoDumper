@@ -1,5 +1,7 @@
-# pyiatrebuild
-Use this library to automatically rebuild the import address table for a PE dumped from memory. It also be used to fully dump and rebuild a PE from memory.
+# PEAutoDumper 
+* Fork from [This project](https://github.com/OALabs/PyIATRebuild.git)
+* Developing...
+* Use this library to automatically rebuild the import address table for a PE dumped from memory. It also be used to fully dump and rebuild a PE from memory.
 
 
 **WARNING!** I only wrote this because I couldn't find an existing tool with python bindings. 

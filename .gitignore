@@ -88,5 +88,6 @@ ENV/
 # Rope project settings
 .ropeproject
 
-.exe.bin
-.dmp
+*.exe.bin
+*.dmp
+*.exe
