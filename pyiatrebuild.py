@@ -606,6 +606,7 @@ def dump_and_rebuild(pid, oep, newimpdir="newimpdir", newiat="newiat"):
             rawsize=tmp_section["rawsize"])
 
     pf.NThdr.ImageBase = base_address
+    print("Base_address: " {hex(base_address)}")
     pf.Opthdr.AddressOfEntryPoint = oep
     # Disable rebase, since addresses are absolute any rebase will make this explode
     pf.NThdr.dllcharacteristics = 0x0
