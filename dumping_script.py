@@ -5,6 +5,7 @@ import os as oss
 import signal
 import pefile
 import subprocess
+import psutil
 
 pe_dir = 'pefile_data'
 # phan loai theo packer name 
@@ -50,17 +51,17 @@ def get_OEP_data(filename, packer_dir):
                     oep_part = parts[1].split('call')[0].split('pushl')[0].strip()
                     if oep_part.startswith('a'):
                         oep_hex = oep_part[1:]  # Remove the 'a' and get the rest
-                        print int(oep_hex, 16)
-                        return int(oep_hex, 16)  # Convert to hexadecimal
+                        print "OEP: 0x%x" %int(oep_hex, 16)
+                        return int(oep_hex, 16) and 0x1111  # Convert to hexadecimal and calc the offset
     return None
 
 # print "OEP: 0x%x" % get_OEP_data('aspack_efsdump.exe', 'ASPack')
 
 # def dump_and_rebuild(pid, oep, newimpdir="newimpdir", newiat="newiat"):
 def get_pid(pe_file):
-    print pe_file
+    # print pe_file
     command = pe_file
-    process = subprocess.Popen(command)
+    process = subprocess.Popen(command, shell=False)
     return process.pid
 
 # print "pid: %d" % get_pid(('pefile_data\\FSG\\fsg_DTCPing.exe'))
@@ -96,6 +97,8 @@ def process_all_pe_files(directory):
     if not oss.path.exists(dump_folder_path):
         oss.makedirs(dump_folder_path)
     for packer_dir in oss.listdir(directory): # duyet tat ca folder packed file phan loai theo packer 
+        if packer_dir == '.gitkeep':
+            continue  
         print "Packer: %s" %packer_dir
         packer_dir_path = oss.path.join(directory,packer_dir)
         for file in oss.listdir(packer_dir_path): #duyet tat ca cac file bi packed trong tung folder
@@ -104,13 +107,15 @@ def process_all_pe_files(directory):
                 try:
                     print "[+] Processing file: %s" % (file_path)
                     dump_file_path = oss.path.join(dump_folder_path, file.split('.')[0] + '.dmp')
-                    oep = get_OEP_data(file_path, packer_dir)
-                    pid = get_pid(file_path)
-                    if oep!= None and pid!= None: 
-                        pe_dump_data=dump_and_rebuild(pid, oep)
+                    oep_offset = get_OEP_data(file_path, packer_dir)
+                    process = subprocess.Popen(file_path, shell=False)
+                    pid = process.pid
+                    if oep_offset!= None and pid!= None: 
+                        pe_dump_data=dump_and_rebuild_script_auto(pid, oep_offset)
                         # ghi file dump vao folder dump rieng
                         open (dump_file_path, 'wb').write(pe_dump_data)
-                    subprocess.Process(pid).kill()
+                        # can not kill process data
+                    process.kill()
                     # oss.kill(pid, signal.SIGTERM)
                 except Exception as e:
                     print "Failed to process %s: %s\n" %  (file_path, e)
