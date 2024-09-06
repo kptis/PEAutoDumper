@@ -91,3 +91,10 @@ ENV/
 *.exe.bin
 *.dmp
 *.exe
+
+# data
+pefile_data/*
+dump_data/*
+# exception to the rule
+!pefile_data/.gitkeep 
+!dump_data/.gitkeep 

@@ -92,11 +92,13 @@ def call_scan(data_vr_address, data, start_limit=None, end_limit=None):
     CALL ECX Register
     """
     # Call scan has two options based on the limit settings
+    # khong thiet lap gioi han thi quet va giu lai call mac dinh trong doan du lieu pe_data
     # if there are no limits then only potential IAT pointers 
     # to inside the scanned data will be kept. This is useful 
     # if you are scanning a data blob and are not able to resolve 
-    # outside the blob.
-    #
+    # outside the blob. 
+    # 
+    # thiet lap gioi han, ham se giu lai bat ky con tro nao co kn la IAT ptr nam trong pham vi gioi han do thuong la pham vi mapped PE 
     # If the limits are set then any potential IAT pointers to
     # inside the limits are kept. This is useful if you are 
     # scanning the code segment of a PE file but your IAT may
@@ -107,6 +109,8 @@ def call_scan(data_vr_address, data, start_limit=None, end_limit=None):
         start_limit = data_vr_address
     if end_limit ==None:
         end_limit = data_vr_address + len(data)
+        
+        
 
     iat_ptrs=[]
     reg_redirect = {"EAX":0x0, "EBX":0x0, "ECX":0x0, "EDX":0x0}
@@ -200,6 +204,8 @@ def rebuild_iat(pid, pe_data, base_address, oep, newimpdir="newimpdir", newiat="
     pf = pe_init.PE(loadfrommem=loadfrommem, pestr=pe_data)
 
     pf.NThdr.ImageBase = base_address
+    print type(oep)
+    print type(base_address)
 
     # get offset to oep
     rva_oep = oep - base_address
@@ -225,9 +231,10 @@ def rebuild_iat(pid, pe_data, base_address, oep, newimpdir="newimpdir", newiat="
         tmp_end = tmp_start + tmp_sec.size
         if (rva_oep >= tmp_start) and (rva_oep <= tmp_end):
             try:
+                # get section data
                 pdata = pf._rva.get(tmp_start,tmp_end)
             except AttributeError as e:
-                raise AttributeError("You are using the wrong version of elfesteem, don't use pip instead install from https://github.com/serpilliere/elfesteem")
+                raise AttributeError("You are using the wrong version of elfesteem, don't use pip, instead install from https://github.com/serpilliere/elfesteem")
             data_vr_addr = base_address + tmp_start
             data_rva = tmp_start
             break
@@ -444,7 +451,6 @@ def get_mem_map(process):
     return mem_map_arr
 
 
-
 def dump_and_rebuild_pe_based(pid, oep, orig_pe, newimpdir="newimpdir", newiat="newiat"):
     '''Dump pe-based packer process and rebuild with new original entry point.
     This function requires the original PE file in order to use the header and 
@@ -536,8 +542,7 @@ def dump_and_rebuild_pe_based(pid, oep, orig_pe, newimpdir="newimpdir", newiat="
     return rebuild_iat(pid, str(pf), base_address, oep, newimpdir=newimpdir, newiat=newiat, loadfrommem=False)
 
 
-
-def dump_and_rebuild(pid, oep, newimpdir="newimpdir", newiat="newiat"):
+def dump_and_rebuild(pid, oep, newimpdir="MTAimpdir", newiat="MTAiat"):
     '''Dump process and rebuild with new original entry point.
     @param pid: process ID
     @param oep: original entry point
@@ -606,10 +611,12 @@ def dump_and_rebuild(pid, oep, newimpdir="newimpdir", newiat="newiat"):
             rawsize=tmp_section["rawsize"])
 
     pf.NThdr.ImageBase = base_address
-    print("Base_address: " {hex(base_address)}")
+    print "type base_address: %s" % type(base_address)
+    # print "Base_address: 0x%s" % hex(base_address)
     pf.Opthdr.AddressOfEntryPoint = oep
     # Disable rebase, since addresses are absolute any rebase will make this explode
     pf.NThdr.dllcharacteristics = 0x0
+    #  turn off the dll character: dll can move 
 
     #######################################################################
     # 
