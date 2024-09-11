@@ -1,4 +1,5 @@
 from pyiatrebuild import *
+from test_dump_rebuild import *
 # from pathlib import Path
 
 import os as oss
@@ -104,26 +105,34 @@ def process_all_pe_files(directory):
         for file in oss.listdir(packer_dir_path): #duyet tat ca cac file bi packed trong tung folder
             file_path = oss.path.join(packer_dir_path, file)
             if is_pe(file_path):  # check PE32 
+                process = None
                 try:
                     print "[+] Processing file: %s" % (file_path)
                     dump_file_path = oss.path.join(dump_folder_path, file.split('.')[0] + '.dmp')
                     oep_offset = get_OEP_data(file_path, packer_dir)
                     process = subprocess.Popen(file_path, shell=False)
                     pid = process.pid
-                    if oep_offset!= None and pid!= None: 
-                        pe_dump_data=dump_and_rebuild_script_auto(pid, oep_offset)
-                        # ghi file dump vao folder dump rieng
-                        open (dump_file_path, 'wb').write(pe_dump_data)
-                        # can not kill process data
-                    process.kill()
-                    # oss.kill(pid, signal.SIGTERM)
+                    if oep_offset is not None and pid is not None:
+                        pe_dump_data = dump_and_rebuild_script_auto(pid, oep_offset)
+                        with open(dump_file_path, 'wb') as f:
+                            f.write(pe_dump_data)
                 except Exception as e:
                     print "Failed to process %s: %s\n" %  (file_path, e)
+                finally:
+                    if process:
+                        try:
+                            parent = psutil.Process(process.pid)
+                            for child in parent.children(recursive=True):
+                                child.terminate()
+                            parent.terminate()
+                            parent.wait(timeout=5)
+                        except psutil.NoSuchProcess:
+                            pass
+                        except psutil.TimeoutExpired:
+                            parent.kill()
             # subprocess.Process(pid).terminate()
             # Process(pid).kill()
             
 
 if __name__ == '__main__':
     process_all_pe_files('pefile_data')
-    
-    
