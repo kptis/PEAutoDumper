@@ -1,7 +1,7 @@
-from pyiatrebuild import *
-from test_dump_rebuild import *
+# from pyiatrebuild import *
+from MTA_dump_rebuild import *
 # from pathlib import Path
-
+import logging
 import os as oss
 import signal
 import pefile
@@ -17,22 +17,37 @@ list_data_dir = oss.listdir(pe_dir)
 
 oep_data_dir = 'oep_data'
 list_file_oep = oss.listdir(oep_data_dir)
+log_file_path ='log_dumping_script.txt'
+# Set up logging
+logging.basicConfig(filename=log_file_path, level=logging.INFO, 
+                    format='%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logger =logging.getLogger(__name__)
 
 # default_base_addr = 0x400000
-def get_default_base_addr(pe_file):
-    base_addr =  0x0
+# def get_default_base_addr(pe_file):
+    # base_addr =  0x0
     # processing to get default base addr 
-    try:
-        with open(pe_file, "rb") as file:
-            file.seek(0x94)
+    # try:
+        # with open(pe_file, "rb") as file:
+            # file.seek(0x94)
             # unpack -> unsigned int 4 bytes, little endian 
-            Imagebase = struct.unpack('<I',(file.read(4)))
-            print "Imagebase: 0x%x" % Imagebase[0]
-            return hex(Imagebase[0])
-    except Exception as e:
-        print "Error: %s" % e
-        return None
+            # Imagebase = struct.unpack('<I',file.read(4))
+            # print "Imagebase: 0x%x" % Imagebase[0]
+            # return Imagebase[0]
+    # except Exception as e:
+        # print "Error: %s" % e
+        # return None
 # get_default_base_addr('pefile_data\\FSG\\fsg_DTCPing.exe')
+
+def get_default_base_addr(pe_file):
+    try:
+        pe = pefile.PE(pe_file)
+        base_addr = pe.OPTIONAL_HEADER.ImageBase
+        # print "ImageBase: 0x%x" % base_addr
+        return base_addr
+    except Exception as e:
+        print "Error: %s" %e
+        return None
 
 def get_OEP_data(filename, packer_dir):
     oep_filepath = ''
@@ -40,6 +55,16 @@ def get_OEP_data(filename, packer_dir):
         if packer_dir.lower() in f.lower():
             oep_filepath = oss.path.join(oep_data_dir, f)
             break
+    if not oep_filepath:
+        error_message = "Error: OEP file not found for %s" % packer_dir
+        logger.error(error_message)
+        return None    
+    # Get the base address
+    base_address = get_default_base_addr(filename)
+    if base_address is None:
+        error_message = "Error: Could not get base address for %s" % filename
+        logger.error(error_message)
+        return None   
     # continue here
     with open (oep_filepath, 'r') as f: 
         for line in f:
@@ -51,11 +76,15 @@ def get_OEP_data(filename, packer_dir):
                 if len(parts) > 1 and parts[1] != "None":
                     oep_part = parts[1].split('call')[0].split('pushl')[0].strip()
                     if oep_part.startswith('a'):
-                        oep_hex = oep_part[1:]  # Remove the 'a' and get the rest
-                        print "OEP: 0x%x" %int(oep_hex, 16)
-                        return int(oep_hex, 16) and 0x1111  # Convert to hexadecimal and calc the offset
-    return None
-
+                        # Remove the 'a' and get the rest
+                        oep_offset = int(oep_part[1:], 16)  - get_default_base_addr(filename)
+                        message = "RVA OEP data: 0x%x" %  oep_offset
+                        print message
+                        logger.info(message)
+                        return  oep_offset
+    error_message = "OEP data not found for %s" % filename
+    logger.error(error_message)
+    return None   
 # print "OEP: 0x%x" % get_OEP_data('aspack_efsdump.exe', 'ASPack')
 
 # def dump_and_rebuild(pid, oep, newimpdir="newimpdir", newiat="newiat"):
@@ -93,22 +122,26 @@ def is_pe(pe_file):
 
 # print "Check PE file: %s" % is_pe('pefile_data\\FSG\\fsg_DTCPing.exe')
 
-dump_folder_path = 'dump_data'
+dump_folder_path = 'dump_data_2'
 def process_all_pe_files(directory):
     if not oss.path.exists(dump_folder_path):
         oss.makedirs(dump_folder_path)
     for packer_dir in oss.listdir(directory): # duyet tat ca folder packed file phan loai theo packer 
         if packer_dir == '.gitkeep':
             continue  
-        print "Packer: %s" %packer_dir
+        log_message = "Packer: %s" % packer_dir
+        print log_message
+        logger.info(log_message)
         packer_dir_path = oss.path.join(directory,packer_dir)
         for file in oss.listdir(packer_dir_path): #duyet tat ca cac file bi packed trong tung folder
             file_path = oss.path.join(packer_dir_path, file)
             if is_pe(file_path):  # check PE32 
                 process = None
                 try:
-                    print "[+] Processing file: %s" % (file_path)
-                    dump_file_path = oss.path.join(dump_folder_path, file.split('.')[0] + '.dmp')
+                    log_message = "Processing file: %s" % file_path
+                    print log_message
+                    logger.info(log_message)
+                    dump_file_path = oss.path.join(dump_folder_path, file.split('.')[0] + '.dmp.exe')
                     oep_offset = get_OEP_data(file_path, packer_dir)
                     process = subprocess.Popen(file_path, shell=False)
                     pid = process.pid
@@ -116,8 +149,11 @@ def process_all_pe_files(directory):
                         pe_dump_data = dump_and_rebuild_script_auto(pid, oep_offset)
                         with open(dump_file_path, 'wb') as f:
                             f.write(pe_dump_data)
+                        logger.info("!!!Successfully processing file: %s" % file_path)
                 except Exception as e:
-                    print "Failed to process %s: %s\n" %  (file_path, e)
+                    error_message = "Failed to process %s: %s" % (file_path, str(e))
+                    print error_message
+                    logger.error(error_message)
                 finally:
                     if process:
                         try:

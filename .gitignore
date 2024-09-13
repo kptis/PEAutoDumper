@@ -94,7 +94,7 @@ ENV/
 
 # data
 pefile_data/*
-dump_data/*
+dump_data_[*]/*
 # exception to the rule
 !pefile_data/.gitkeep 
 !dump_data/.gitkeep 
