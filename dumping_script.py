@@ -7,7 +7,7 @@ import signal
 import pefile
 import subprocess
 import psutil
-
+import datetime 
 pe_dir = 'pefile_data'
 # phan loai theo packer name 
 #  each item = packer name
@@ -17,12 +17,22 @@ list_data_dir = oss.listdir(pe_dir)
 
 oep_data_dir = 'oep_data'
 list_file_oep = oss.listdir(oep_data_dir)
-log_file_path ='log_dumping_script.txt'
-# Set up logging
-logging.basicConfig(filename=log_file_path, level=logging.INFO, 
-                    format='%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-logger =logging.getLogger(__name__)
 
+# Create a 'logs' directory if it doesn't exist
+if not os.path.exists('logs'):
+    os.makedirs('logs)
+# log_file_path ='log_dumping_script.txt'
+# Configure logging
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+handler = RotatingFileHandler('logs/dumping_script_%s.log' % timestamp, maxBytes=10000000, backupCount=5)
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        handler,
+                        logging.StreamHandler()
+                    ])
+
+logger = logging.getLogger(__name__)
 # default_base_addr = 0x400000
 # def get_default_base_addr(pe_file):
     # base_addr =  0x0
