@@ -727,19 +727,19 @@ def dump_and_rebuild_script_auto(pid, oep_offset, newimpdir="MTAimpdir", newiat=
     return rebuild_iat(pid, str(pf), base_address, oep, newimpdir=newimpdir, newiat=newiat, loadfrommem=False)
 
 def main():
-    parser = argparse.ArgumentParser(description="Simple example of PyIATRebuild library in use!")
+    parser = argparse.ArgumentParser(description="Simple example of MTA_dump_rebuild library in use!")
     subparsers = parser.add_subparsers(help='', dest='subparser_name')
 
     # create the parser for the load command
-    parser_rebuild = subparsers.add_parser('rebuild', help='Load dumped PE from file, attach to process, and rebuild IAT.')
-    parser_rebuild.add_argument("infile", help="The file to fix IAT.")
-    parser_rebuild.add_argument("outfile", help="The file to write results.")
-    parser_rebuild.add_argument('--pid',dest="in_pid",type=int,default=None,required=True,help="Specify process ID to export IAT from.")
-    parser_rebuild.add_argument('--base_address',dest="in_base_address",type=int,default=None,required=True,help="Specify base address the process is loaded at (will overwrite PE).")
-    parser_rebuild.add_argument('--oep',dest="in_oep",type=int,default=None,required=True,help="Specify original entry point for process, virtual address not RVA (will overwrite PE).")
+    # parser_rebuild = subparsers.add_parser('rebuild', help='Load dumped PE from file, attach to process, and rebuild IAT.')
+    # parser_rebuild.add_argument("infile", help="The file to fix IAT.")
+    # parser_rebuild.add_argument("outfile", help="The file to write results.")
+    # parser_rebuild.add_argument('--pid',dest="in_pid",type=int,default=None,required=True,help="Specify process ID to export IAT from.")
+    # parser_rebuild.add_argument('--base_address',dest="in_base_address",type=int,default=None,required=True,help="Specify base address the process is loaded at (will overwrite PE).")
+    # parser_rebuild.add_argument('--oep',dest="in_oep",type=int,default=None,required=True,help="Specify original entry point for process, virtual address not RVA (will overwrite PE).")
 
     # create the parser for the results command
-    parser_dump = subparsers.add_parser('dump', help='Attach to process, dump, and rebuild IAT.')
+    parser_dump = subparsers.add_parser('dump_rebuild', help='Attach to process, dump, and rebuild IAT.')
     parser_dump.add_argument("outfile", help="The file to write results.")
     parser_dump.add_argument('--pid',dest="in_pid",type=int,default=None,required=True,help="Specify process ID to export IAT from.")
     parser_dump.add_argument('--oep',dest="in_oep",type=int,default=None,required=True,help="Specify original entry point for process, virtual address not RVA (will overwrite PE).")
