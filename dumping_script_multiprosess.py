@@ -134,7 +134,7 @@ def worker_init(q):
     worker_configurer(q)
     logger = logging.getLogger(__name__)
 
-dump_folder_path = 'dump_data_3'
+dump_folder_path = 'dump_data_2'
 
 def process_file(file_path, packer_dir, dump_folder_path):
     global should_stop

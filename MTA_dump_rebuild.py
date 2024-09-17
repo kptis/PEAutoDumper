@@ -462,7 +462,7 @@ def get_mem_map(process):
         mem_map_arr.append(mem_page)
     return mem_map_arr
 
-# use to rebuild dumped PE file 
+# use to rebuild dumped PE file: not fixed yet. So let it be for a while pls:>
 def dump_and_rebuild_pe_based(pid, oep, orig_pe, newimpdir="MTAimpdir", newiat="MTAiat"):
     '''Dump pe-based packer process and rebuild with new original entry point.
     This function requires the original PE file in order to use the header and 
