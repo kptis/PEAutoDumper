@@ -4,10 +4,14 @@ import logging
 import sys
 import struct
 import argparse
-import os as p_os
+import subprocess
+import psutil
+import os as oss
 from collections import OrderedDict
 from itertools import chain
 from functools import partial
+import ctypes
+import ctypes.wintypes as wintypes
 
 # This is not cross platform! 
 # How can you attach to PE process on anything but windows :)
@@ -31,6 +35,8 @@ logger = logging.getLogger(__name__)
 __AUTHOR__ = '@n33r9'
 __VERSION__ = 1.0
 
+
+
 #############################################################################################################################################
 #
 # Functions _call_or_unc_jmp and call_scan are heavily influnced and partially copied from the volitility plugin "impscan.py"
@@ -41,6 +47,55 @@ __VERSION__ = 1.0
 # https://github.com/volatilityfoundation/volatility/blob/master/volatility/plugins/malware/impscan.py
 #
 #############################################################################################################################################
+
+# Define constants
+PROCESS_QUERY_INFORMATION = 0x0400
+PROCESS_VM_READ = 0x0010
+TH32CS_SNAPMODULE = 0x00000008
+INVALID_HANDLE_VALUE = -1
+
+# Load kernel32
+kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+
+class MODULEENTRY32(ctypes.Structure):
+    _fields_ = [
+        ('dwSize', wintypes.DWORD),
+        ('th32ModuleID', wintypes.DWORD),
+        ('th32ProcessID', wintypes.DWORD),
+        ('GlblcntUsage', wintypes.DWORD),
+        ('ProccntUsage', wintypes.DWORD),
+        ('modBaseAddr', ctypes.POINTER(ctypes.c_byte)),
+        ('modBaseSize', wintypes.DWORD),
+        ('hModule', wintypes.HMODULE),
+        ('szModule', ctypes.c_char * 256),
+        ('szExePath', ctypes.c_char * 260),
+    ]
+
+def get_base_address(pid):
+    h_snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pid)
+    if h_snapshot == INVALID_HANDLE_VALUE:
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    me32 = MODULEENTRY32()
+    me32.dwSize = ctypes.sizeof(MODULEENTRY32)
+
+    if not kernel32.Module32First(h_snapshot, ctypes.byref(me32)):
+        kernel32.CloseHandle(h_snapshot)
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    base_address = None
+    while True:
+        # Get the base address of the first module (usually the executable itself)
+        base_address = me32.modBaseAddr
+        print("Module Name: %s, Base Address: %s" % (me32.szModule, hex(ctypes.cast(base_address, ctypes.c_void_p).value)))
+
+        # Break after the first module to get the executable base address
+        break
+
+    kernel32.CloseHandle(h_snapshot)
+    return ctypes.cast(base_address, ctypes.c_void_p).value
+
+
 def _call_or_unc_jmp(op):
     """Determine if an instruction is a call or an
     unconditional jump
@@ -78,28 +133,34 @@ def call_scan(data_vr_address, data, start_limit=None, end_limit=None):
     end_limit = data_vr_address + len(data) if end_limit is None else end_limit
         
     iat_ptrs=[]
-    reg_redirect = {"EAX":0x0, "EBX":0x0, "ECX":0x0, "EDX":0x0}
+    reg_redirect = {"EAX":0x0, "EBX":0x0, "ECX":0x0, "EDX":0x0, "ESI":0x0, "ESP":0x0, "EBP":0x0, "EDI":0x0}
+    stack_values = []  # To handle PUSH-RET and SEH
     mode = distorm3.Decode32Bits
-    # for op in distorm3.DecomposeGenerator(data_vr_address, data, mode):
-        # if not op.valid:
-            # continue
-        # iat_loc = None
-        # if (_call_or_unc_jmp(op) and op.operands[0].type == 'AbsoluteMemoryAddress'):
-            # iat_loc = (op.operands[0].disp) & 0xffffffff
-        # if op.mnemonic == "MOV" and op.operands[0].type == 'Register' and op.operands[1].type == 'AbsoluteMemoryAddress':
-            # print "MOV %s %s %s" % (op.operands[0], op.operands[1], op.operands[1].type)
-            # reg_redirect[str(op.operands[0])] =op.operands[1].disp
-        # if op.mnemonic == "CALL" and op.operands[0].type == 'Register':
-            # print "CALL %s %s" % (op.operands[0], op.operands[0].type)
-            # iat_loc = reg_redirect[str(op.operands[0])]
-        # if (not iat_loc or (iat_loc < start_limit) or (iat_loc > end_limit)):
-            # continue
-        # resolve iat_loc to API
-        # print iat_loc
-        # if iat_loc not in iat_ptrs:
-            # iat_ptrs.append(iat_loc)
-    # return iat_ptrs
     
+    # algorithm 1 
+    '''
+    for op in distorm3.DecomposeGenerator(data_vr_address, data, mode):
+        if not op.valid:
+            continue
+        iat_loc = None
+        if (_call_or_unc_jmp(op) and op.operands[0].type == 'AbsoluteMemoryAddress'):
+            iat_loc = (op.operands[0].disp) & 0xffffffff
+        if op.mnemonic == "MOV" and op.operands[0].type == 'Register' and op.operands[1].type == 'AbsoluteMemoryAddress':
+            print "MOV %s %s %s" % (op.operands[0], op.operands[1], op.operands[1].type)
+            reg_redirect[str(op.operands[0])] =op.operands[1].disp
+        if op.mnemonic == "CALL" and op.operands[0].type == 'Register':
+            print "CALL %s %s" % (op.operands[0], op.operands[0].type)
+            iat_loc = reg_redirect[str(op.operands[0])]
+        if (not iat_loc or (iat_loc < start_limit) or (iat_loc > end_limit)):
+            continue
+        # resolve iat_loc to API
+        print iat_loc
+        if iat_loc not in iat_ptrs:
+            iat_ptrs.append(iat_loc) 
+    '''
+    
+    # algorithm 2
+    '''
     for op in distorm3.DecomposeGenerator(data_vr_address, data, mode):
         if not op.valid:
             continue
@@ -124,7 +185,56 @@ def call_scan(data_vr_address, data, start_limit=None, end_limit=None):
         
         if iat_loc and start_limit <= iat_loc <= end_limit and iat_loc not in iat_ptrs:
             iat_ptrs.append(iat_loc)
+    '''
+    # algorithm 3 
+    
+    for op in distorm3.DecomposeGenerator(data_vr_address, data, mode):
+        if not op.valid:
+            continue
+        iat_loc = None
+
+        # Handle direct calls and jumps
+        if _call_or_unc_jmp(op) and op.operands[0].type == 'AbsoluteMemoryAddress':
+            iat_loc = (op.operands[0].disp) & 0xffffffff
+
+        # Handle indirect calls through registers (stolen code technique)
+        elif op.mnemonic == "CALL" and op.operands[0].type == 'Register':
+            iat_loc = reg_redirect.get(str(op.operands[0]), None)
+
+        # Handle indirect jumps through registers
+        elif op.mnemonic == "JMP" and op.operands[0].type == 'Register':
+            iat_loc = reg_redirect.get(str(op.operands[0]), None)
+
+        # Track register values for indirect calls and jumps
+        elif op.mnemonic == "MOV" and op.operands[0].type == 'Register' and op.operands[1].type == 'AbsoluteMemoryAddress':
+            reg_redirect[str(op.operands[0])] = op.operands[1].disp
+
+        # Handle PUSH-RET sequences (ROP redirection)
+        elif op.mnemonic == "PUSH" and op.operands[0].type == 'AbsoluteMemoryAddress':
+            stack_values.append((op.operands[0].disp) & 0xffffffff)
+
+        elif op.mnemonic == "RET" and stack_values:
+            # Handle ROP or indirect call via PUSH-RET
+            iat_loc = stack_values.pop()
+
+        # Handle SEH-style redirection (through the FS segment register)
+        elif op.mnemonic == "MOV" and op.operands[0].type == 'Register' and op.operands[1].type == 'Memory':
+            # Check for FS segment usage, commonly used in SEH
+            if op.operands[1].segment == "FS":
+                # This could indicate SEH redirection, handle accordingly
+                reg_redirect[str(op.operands[0])] = op.operands[1].disp
+
+        # Handle stolen bytes techniques by looking for unusual control flow patterns
+        elif op.mnemonic in ["CALL", "JMP"] and op.operands[0].type == "Memory":
+            # Handle cases where the code flow is redirected indirectly
+            iat_loc = op.operands[0].disp
+
+        if iat_loc and start_limit <= iat_loc <= end_limit and iat_loc not in iat_ptrs:
+            iat_ptrs.append(iat_loc)
+        
+        
     return iat_ptrs
+
 
 def _iat_candidate(op):
     """Determine if an instruction is able to reference an IAT pointer
@@ -454,7 +564,7 @@ def get_mem_map(process):
             try:
                 fileName = GetMappedFileName(hProcess, mbi.BaseAddress) 
                 file_path = winappdbg.PathOperations.native_to_win32_pathname(fileName)
-                mem_page['Owner'] = p_os.path.basename(file_path)
+                mem_page['Owner'] = oss.path.basename(file_path)
             except WindowsError as e: 
                 mem_page['Owner'] = "???"
 
@@ -463,7 +573,7 @@ def get_mem_map(process):
     return mem_map_arr
 
 # use to rebuild dumped PE file: not fixed yet. So let it be for a while pls:>
-def dump_and_rebuild_pe_based(pid, oep, orig_pe, newimpdir="MTAimpdir", newiat="MTAiat"):
+def dump_and_rebuild_pe_based(pid, oep, orig_pe, newimpdir="MTAimpdir_fix", newiat="MTAiat_fix"):
     '''Dump pe-based packer process and rebuild with new original entry point.
     This function requires the original PE file in order to use the header and 
     header corrumption anti-dumping techniques.
@@ -480,7 +590,7 @@ def dump_and_rebuild_pe_based(pid, oep, orig_pe, newimpdir="MTAimpdir", newiat="
     except WindowsError as e:
         pass
     file_path = process.get_filename()
-    file_name = p_os.path.basename(file_path)
+    file_name = oss.path.basename(file_path)
 
     #######################################################################
     # 
@@ -570,7 +680,7 @@ def dump_and_rebuild(pid, oep, newimpdir="MTAimpdir", newiat="MTAiat"):
     except WindowsError as e:
         pass
     file_path = process.get_filename()
-    file_name = p_os.path.basename(file_path)
+    file_name = oss.path.basename(file_path)
 
     #######################################################################
     # 
@@ -650,7 +760,7 @@ def dump_and_rebuild_script_auto(pid, oep_offset, newimpdir="MTAimpdir", newiat=
     except WindowsError:
         pass
     
-    file_name = p_os.path.basename(process.get_filename()).upper()
+    file_name = oss.path.basename(process.get_filename()).upper()
 
     mem_map = get_mem_map(process)
 
@@ -667,6 +777,11 @@ def dump_and_rebuild_script_auto(pid, oep_offset, newimpdir="MTAimpdir", newiat=
     # The lowest mapped section is the base address
     ordered_mem = sorted(temp_data_arr.keys())
     base_address = ordered_mem[0]
+    # same result :)))
+    # base_address = get_base_address(pid)
+    
+    # print "base_address1: {0}".format(base_address1)
+    print "base_address: 0x%x" %base_address
     
     # Elfesteem has a small issue with the way it loads mapped PE files
     # instead of using the virtual size for segments it uses the raw size
@@ -724,36 +839,96 @@ def dump_and_rebuild_script_auto(pid, oep_offset, newimpdir="MTAimpdir", newiat=
     # broken IAT. Fix the IAT!
     #
     #######################################################################
+    # return str(pf)
     return rebuild_iat(pid, str(pf), base_address, oep, newimpdir=newimpdir, newiat=newiat, loadfrommem=False)
 
+def is_pe(pe_file):
+    try:
+        with open(pe_file, "rb") as file:
+            # Read the first two bytes of the file
+            magic_number = file.read(2)
+            # Check if the magic number is 'MZ'
+            if magic_number == b'MZ' or magic_number == 'MZ':
+                # Read the DOS Header to get the PE header offset
+                file.seek(0x3C)  # e_lfanew offset (its value = PE header location)
+                pe_header_offset = struct.unpack('<I', file.read(4))[0]
+                file.seek(pe_header_offset + 0x18)  # PE Header starts at e_lfanew, +0x18 is where the Optional Header starts
+                # Read the value: 0x10B --> PE32, 0x20B --> PE64
+                magic_value = struct.unpack('<H', file.read(2))[0]
+                # Check if it's PE32
+                if magic_value == 0x10B:
+                    return True
+        return False
+    except Exception as e:
+        print "Error: %s" % e
+        return False
+    
+def MTA_dump_rebuild_CLI(file_path, oep_offset):
+    if is_pe(file_path):
+        process = None
+        try:
+            log_message = "Processing file: %s" % file_path
+            print(log_message)
+            logger.info(log_message)
+            process = subprocess.Popen([file_path], shell=False)
+            pid = process.pid
+            if oep_offset is not None and pid is not None:
+                pe_dump_data = dump_and_rebuild_script_auto(pid, oep_offset)
+                logger.info("Successfully processing file: %s" % file_path)
+                return pe_dump_data
+        except Exception as e:
+            error_message = "Failed to process %s: %s" % (file_path, str(e))
+            print(error_message)
+            logger.error(error_message)
+            return None
+        finally:
+            if process:
+                try:
+                    parent = psutil.Process(process.pid)
+                    for child in parent.children(recursive=True):
+                        child.terminate()
+                    parent.terminate()
+                    parent.wait(timeout=5)
+                except psutil.NoSuchProcess:
+                    pass
+                except psutil.TimeoutExpired:
+                    parent.kill()
+
+def hex_to_int(hex_str):
+    try:
+        # Remove the "0x" prefix if present and convert to integer
+        return int(hex_str, 16)
+    except ValueError:
+        raise argparse.ArgumentTypeError("Invalid hexadecimal number: %x" %hex_str)
+    
 def main():
     parser = argparse.ArgumentParser(description="Simple example of MTA_dump_rebuild library in use!")
     subparsers = parser.add_subparsers(help='', dest='subparser_name')
 
     # create the parser for the load command
-    # parser_rebuild = subparsers.add_parser('rebuild', help='Load dumped PE from file, attach to process, and rebuild IAT.')
-    # parser_rebuild.add_argument("infile", help="The file to fix IAT.")
-    # parser_rebuild.add_argument("outfile", help="The file to write results.")
-    # parser_rebuild.add_argument('--pid',dest="in_pid",type=int,default=None,required=True,help="Specify process ID to export IAT from.")
-    # parser_rebuild.add_argument('--base_address',dest="in_base_address",type=int,default=None,required=True,help="Specify base address the process is loaded at (will overwrite PE).")
-    # parser_rebuild.add_argument('--oep',dest="in_oep",type=int,default=None,required=True,help="Specify original entry point for process, virtual address not RVA (will overwrite PE).")
+    parser_rebuild = subparsers.add_parser('rebuild', help='Load dumped PE from file, attach to process, and rebuild IAT.')
+    parser_rebuild.add_argument("infile", help="The file to fix IAT.")
+    parser_rebuild.add_argument("outfile", help="The file to write results.")
+    parser_rebuild.add_argument('--pid',dest="in_pid",type=int,default=None,required=True,help="Specify process ID to export IAT from.")
+    parser_rebuild.add_argument('--base_address',dest="in_base_address",type=int,default=None,required=True,help="Specify base address the process is loaded at (will overwrite PE).")
+    parser_rebuild.add_argument('--oep',dest="in_oep",type=int,default=None,required=True,help="Specify original entry point for process, virtual address not RVA (will overwrite PE).")
 
     # create the parser for the results command
-    parser_dump = subparsers.add_parser('dump_rebuild', help='Attach to process, dump, and rebuild IAT.')
-    parser_dump.add_argument("outfile", help="The file to write results.")
-    parser_dump.add_argument('--pid',dest="in_pid",type=int,default=None,required=True,help="Specify process ID to export IAT from.")
-    parser_dump.add_argument('--oep',dest="in_oep",type=int,default=None,required=True,help="Specify original entry point for process, virtual address not RVA (will overwrite PE).")
+    parser_dump = subparsers.add_parser('dr', help='Attach to process, dump, and rebuild IAT.')
+    # parser_dump.add_argument("-o",dest="outfile", type=str, default='output_test.dmp.exe', help="The file to write results.")
+    parser_dump.add_argument('--file',dest="in_file",type=str,default=None,required=True,help="Specify path of the packed PE file need dumping and fixing IAT.")
+    parser_dump.add_argument('--oep',dest="in_oep",type=str,default=None,required=True,help="Specify original entry point for process - offset from imagebase (RVA).")
     args = parser.parse_args()
-
+    out_folder = 'output'
     if args.subparser_name == "rebuild":
-        with open(args.infile,"rb") as fp:
-            pe_data= fp.read()
-        new_pe_data = rebuild_iat(args.in_pid, pe_data, args.in_base_address, args.in_oep)
-        open(args.outfile, 'wb').write(new_pe_data)
+        # with open(args.infile,"rb") as fp:
+            # pe_data= fp.read()
+        # new_pe_data = rebuild_iat(args.in_pid, pe_data, args.in_base_address, args.in_oep)
+        # open(args.outfile, 'wb').write(new_pe_data)
+        print "This function is coming soon!!"
 
-    elif args.subparser_name == "dump":
-        new_pe_data = dump_and_rebuild(args.in_pid, args.in_oep)
-        open(args.outfile, 'wb').write(new_pe_data)
-
+    elif args.subparser_name == "dr":
+        new_pe_data = MTA_dump_rebuild_CLI(args.in_file, hex_to_int(args.in_oep))
+        open(oss.path.join(out_folder, args.in_file.split('\\')[-1].split('.')[0]+'.dmp.exe'), 'wb').write(new_pe_data)
 if __name__ == '__main__':
     main()

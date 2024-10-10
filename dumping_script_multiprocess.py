@@ -1,12 +1,9 @@
 from MTA_dump_rebuild import *
 import logging
 from logging.handlers import RotatingFileHandler
-import os as oss
 import sys
 import signal
 import pefile
-import subprocess
-import psutil
 import datetime 
 import multiprocessing
 from functools import partial
@@ -68,27 +65,6 @@ def get_OEP_data(filename, packer_dir):
     logger.error(error_message)
     return None   
 
-def is_pe(pe_file):
-    try:
-        with open(pe_file, "rb") as file:
-            # Read the first two bytes of the file
-            magic_number = file.read(2)
-            # Check if the magic number is 'MZ'
-            if magic_number == b'MZ' or magic_number == 'MZ':
-                # Read the DOS Header to get the PE header offset
-                file.seek(0x3C)  # e_lfanew offset (its value = PE header location)
-                pe_header_offset = struct.unpack('<I', file.read(4))[0]
-                file.seek(pe_header_offset + 0x18)  # PE Header starts at e_lfanew, +0x18 is where the Optional Header starts
-                # Read the value: 0x10B --> PE32, 0x20B --> PE64
-                magic_value = struct.unpack('<H', file.read(2))[0]
-                # Check if it's PE32
-                if magic_value == 0x10B:
-                    return True
-        return False
-    except Exception as e:
-        print "Error: %s" % e
-        return False
-
 # Custom QueueHandler for Python 2
 class QueueHandler(logging.Handler):
     """
@@ -146,7 +122,7 @@ def process_file(file_path, packer_dir, dump_folder_path):
             log_message = "Processing file: %s" % file_path
             print(log_message)
             logger.info(log_message)
-            dump_file_path = oss.path.join(dump_folder_path, oss.path.basename(file_path).split('.')[0] + '.dmp.exe')
+            dump_file_path = oss.path.join(dump_folder_path, oss.path.bSasename(file_path).split('.')[0] + '.dmp.exe')
             oep_offset = get_OEP_data(file_path, packer_dir)
             process = subprocess.Popen([file_path], shell=False)
             pid = process.pid
